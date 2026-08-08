@@ -1,13 +1,24 @@
 #include "git-compat-util.h"
 #include "diff-pretty-integration.h"
 #include "pager.h"
+#include "thread-utils.h"
 
 static struct diff_pretty_session *native_session;
 static int native_failed;
+static int native_quit;
 static int native_command_session;
 static char native_error[256];
 
+struct diff_pretty_capture {
+	int read_fd;
+	pthread_t reader;
+	int reader_status;
+};
+
+static struct diff_pretty_capture *native_capture;
+
 static void diff_pretty_atexit(void);
+static void *diff_pretty_capture_reader(void *data);
 
 /* The FFI accepts UTF-8 chunks, so do not pass it the lead bytes of a
  * multibyte code point without the continuation bytes that follow them. */
@@ -62,6 +73,7 @@ int diff_pretty_setup(struct repository *repository)
 	if (native_session)
 		return 1;
 	native_failed = 0;
+	native_quit = 0;
 	native_command_session = 0;
 	native_error[0] = '\0';
 
@@ -96,7 +108,7 @@ int diff_pretty_setup_log(struct repository *repository)
 
 int diff_pretty_active(void)
 {
-	return native_session && !native_failed;
+	return native_session && !native_failed && !native_quit;
 }
 
 void diff_pretty_emit_event(unsigned kind, unsigned flags,
@@ -108,7 +120,9 @@ void diff_pretty_emit_event(unsigned kind, unsigned flags,
 		return;
 	status = diff_pretty_push_event(native_session, kind, flags,
 					(const unsigned char *)data, len);
-	if (status < 0)
+	if (status == DIFF_PRETTY_STATUS_QUIT)
+		native_quit = 1;
+	else if (status < 0)
 		remember_native_error("unable to render diff event");
 }
 
@@ -120,60 +134,36 @@ void diff_pretty_emit_patch(const char *data, size_t len)
 		return;
 	status = diff_pretty_push_patch(native_session,
 					(const unsigned char *)data, len);
-	if (status < 0)
+	if (status == DIFF_PRETTY_STATUS_QUIT)
+		native_quit = 1;
+	else if (status < 0)
 		remember_native_error("unable to render Git metadata");
 }
 
-int diff_pretty_capture_begin(FILE **stream, FILE **saved)
+static void *diff_pretty_capture_reader(void *data)
 {
-	FILE *capture;
-
-	if (!diff_pretty_active())
-		return 0;
-	if (!stream || !saved || !*stream) {
-		remember_native_error("unable to capture Git metadata");
-		return -1;
-	}
-
-	capture = tmpfile();
-	if (!capture) {
-		remember_native_error("unable to create Git metadata buffer");
-		return -1;
-	}
-
-	*saved = *stream;
-	*stream = capture;
-	return 1;
-}
-
-int diff_pretty_capture_end(FILE **stream, FILE *saved)
-{
-	FILE *capture;
+	struct diff_pretty_capture *capture = data;
 	char buffer[8192 + 3];
 	char pending[3];
-	int status = 0;
+	ssize_t read_length;
 	size_t length, pending_len = 0, suffix_len;
-
-	if (!stream || !*stream || !saved) {
-		remember_native_error("unable to finish Git metadata capture");
-		return -1;
-	}
-
-	capture = *stream;
-	if (fflush(capture) || fseek(capture, 0, SEEK_SET)) {
-		remember_native_error("unable to read Git metadata buffer");
-		status = -1;
-		goto close_capture;
-	}
 
 	for (;;) {
 		if (pending_len)
 			memcpy(buffer, pending, pending_len);
-		length = fread(buffer + pending_len, 1,
-			       sizeof(buffer) - pending_len, capture);
-		if (!length)
+		do {
+			read_length = read(capture->read_fd, buffer + pending_len,
+					   sizeof(buffer) - pending_len);
+		} while (read_length < 0 && errno == EINTR);
+		if (read_length < 0) {
+			remember_native_error("unable to read Git metadata pipe");
+			capture->reader_status = -1;
 			break;
-		length += pending_len;
+		}
+		if (!read_length)
+			break;
+
+		length = pending_len + (size_t)read_length;
 		pending_len = 0;
 		suffix_len = incomplete_utf8_suffix(buffer, length);
 		if (suffix_len) {
@@ -183,24 +173,97 @@ int diff_pretty_capture_end(FILE **stream, FILE *saved)
 		}
 		if (length)
 			diff_pretty_emit_patch(buffer, length);
-		if (native_failed) {
-			status = -1;
-			break;
-		}
 	}
-	if (ferror(capture)) {
-		remember_native_error("unable to read Git metadata buffer");
-		status = -1;
-	}
-	if (!status && pending_len)
+	if (pending_len)
 		diff_pretty_emit_patch(pending, pending_len);
 	if (native_failed)
-		status = -1;
+		capture->reader_status = -1;
+	close(capture->read_fd);
+	return NULL;
+}
 
-close_capture:
-	if (fclose(capture)) {
-		remember_native_error("unable to close Git metadata buffer");
+int diff_pretty_capture_begin(FILE **stream, FILE **saved)
+{
+	struct diff_pretty_capture *capture_state;
+	FILE *capture;
+	int pipe_fds[2];
+
+	if (!diff_pretty_active())
+		return 0;
+	if (!stream || !saved || !*stream) {
+		remember_native_error("unable to capture Git metadata");
+		return -1;
+	}
+	if (native_capture) {
+		remember_native_error("nested Git metadata capture");
+		return -1;
+	}
+
+	if (pipe(pipe_fds)) {
+		remember_native_error("unable to create Git metadata pipe");
+		return -1;
+	}
+	capture = fdopen(pipe_fds[1], "w");
+	if (!capture) {
+		close(pipe_fds[0]);
+		close(pipe_fds[1]);
+		remember_native_error("unable to create Git metadata buffer");
+		return -1;
+	}
+	if (setvbuf(capture, NULL, _IONBF, 0)) {
+		fclose(capture);
+		close(pipe_fds[0]);
+		remember_native_error("unable to configure Git metadata pipe");
+		return -1;
+	}
+
+	capture_state = xcalloc(1, sizeof(*capture_state));
+	capture_state->read_fd = pipe_fds[0];
+	if (pthread_create(&capture_state->reader, NULL,
+			   diff_pretty_capture_reader, capture_state)) {
+		free(capture_state);
+		fclose(capture);
+		close(pipe_fds[0]);
+		remember_native_error("unable to start Git metadata reader");
+		return -1;
+	}
+	native_capture = capture_state;
+
+	*saved = *stream;
+	*stream = capture;
+	return 1;
+}
+
+int diff_pretty_capture_end(FILE **stream, FILE *saved)
+{
+	FILE *capture;
+	int status = 0;
+	struct diff_pretty_capture *capture_state;
+
+	if (!stream || !*stream || !saved) {
+		remember_native_error("unable to finish Git metadata capture");
+		return -1;
+	}
+
+	capture = *stream;
+	capture_state = native_capture;
+	if (!capture_state) {
+		remember_native_error("missing Git metadata reader");
 		status = -1;
+	}
+	if (fclose(capture)) {
+		remember_native_error("unable to close Git metadata pipe");
+		status = -1;
+	}
+	if (capture_state) {
+		if (pthread_join(capture_state->reader, NULL)) {
+			remember_native_error("unable to join Git metadata reader");
+			status = -1;
+		}
+		if (capture_state->reader_status < 0)
+			status = -1;
+		free(capture_state);
+		native_capture = NULL;
 	}
 	*stream = saved;
 	return status;
@@ -222,6 +285,8 @@ int diff_pretty_end(void)
 
 	if (native_failed) {
 		status = -1;
+	} else if (native_quit) {
+		status = 0;
 	} else {
 		status = diff_pretty_finish(native_session);
 		if (status < 0) {
@@ -241,6 +306,7 @@ int diff_pretty_end(void)
 
 	diff_pretty_abort(native_session);
 	native_session = NULL;
+	native_quit = 0;
 	native_command_session = 0;
 	unsetenv("GIT_PAGER_IN_USE");
 	return status < 0 ? -1 : 0;
