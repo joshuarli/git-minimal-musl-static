@@ -116,6 +116,64 @@ if command -v script >/dev/null 2>&1; then
     grep -a -q 'Δ ' "$native_output"
     grep -a -q 'Δ ' "$native_log_output"
     grep -a -q 'diff-pretty' "$native_plain_log_output"
+    for native_file in "$native_output" "$native_log_output" "$native_plain_log_output"; do
+        if grep -a -E -q 'metadata capture failed|incomplete utf-8 byte sequence' "$native_file"; then
+            echo "native diff-pretty metadata capture failed" >&2
+            exit 1
+        fi
+    done
+fi
+
+# Put a UTF-8 lead byte at the end of the adapter's first capture chunk. The
+# prefix length is stable for the next commit: the object name has fixed width
+# and the author/date fields use the same values and format.
+git log -1 > "$test_home/metadata-prefix"
+metadata_prefix_bytes=$(LC_ALL=C awk '
+    NR <= 4 { total += length($0) + 1 }
+    END { print total + 4 }
+' "$test_home/metadata-prefix")
+metadata_padding_bytes=$((8191 - metadata_prefix_bytes))
+test "$metadata_padding_bytes" -gt 0
+LC_ALL=C awk -v padding="$metadata_padding_bytes" '
+    BEGIN {
+        for (i = 0; i < padding; i++)
+            printf "a"
+        printf "\316\224\n"
+    }
+' > "$test_home/long-message"
+printf '%s\n' long > long.txt
+git add long.txt
+GIT_AUTHOR_NAME=Joshua \
+GIT_AUTHOR_EMAIL=joshua@example.com \
+GIT_COMMITTER_NAME=Joshua \
+GIT_COMMITTER_EMAIL=joshua@example.com \
+    git commit -F "$test_home/long-message" -q
+
+if command -v script >/dev/null 2>&1; then
+    delta=$(printf '\316\224')
+    git log -1 > "$test_home/boundary-plain"
+    boundary_offset=$(LC_ALL=C grep -abo "$delta" "$test_home/boundary-plain" |
+        head -1 | cut -d: -f1)
+    test "$boundary_offset" = 8191
+    native_boundary_log="$test_home/native-boundary-log"
+    case "$(uname -s)" in
+        Darwin)
+            (sleep 1; printf 'q') |
+                script -q "$native_boundary_log" sh -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -1" \
+                >/dev/null
+            ;;
+        Linux)
+            (sleep 1; printf 'q') |
+                script -q -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -1" \
+                "$native_boundary_log" >/dev/null
+            ;;
+    esac
+    if grep -a -E -q 'metadata capture failed|incomplete utf-8 byte sequence' "$native_boundary_log"; then
+        echo "native diff-pretty metadata boundary regression" >&2
+        exit 1
+    fi
 fi
 
 branch=$(git branch --show-current)

@@ -9,6 +9,34 @@ static char native_error[256];
 
 static void diff_pretty_atexit(void);
 
+/* The FFI accepts UTF-8 chunks, so do not pass it the lead bytes of a
+ * multibyte code point without the continuation bytes that follow them. */
+static size_t incomplete_utf8_suffix(const char *data, size_t len)
+{
+	unsigned char first;
+	size_t start, expected;
+
+	if (!len)
+		return 0;
+
+	start = len - 1;
+	while (start && ((unsigned char)data[start] & 0xc0) == 0x80)
+		start--;
+	first = (unsigned char)data[start];
+	if (first < 0x80)
+		return 0;
+	if ((first & 0xe0) == 0xc0)
+		expected = 2;
+	else if ((first & 0xf0) == 0xe0)
+		expected = 3;
+	else if ((first & 0xf8) == 0xf0)
+		expected = 4;
+	else
+		return 0;
+
+	return len - start < expected ? len - start : 0;
+}
+
 static void remember_native_error(const char *fallback)
 {
 	const char *error = native_session
@@ -121,9 +149,10 @@ int diff_pretty_capture_begin(FILE **stream, FILE **saved)
 int diff_pretty_capture_end(FILE **stream, FILE *saved)
 {
 	FILE *capture;
-	char buffer[8192];
+	char buffer[8192 + 3];
+	char pending[3];
 	int status = 0;
-	size_t length;
+	size_t length, pending_len = 0, suffix_len;
 
 	if (!stream || !*stream || !saved) {
 		remember_native_error("unable to finish Git metadata capture");
@@ -137,8 +166,23 @@ int diff_pretty_capture_end(FILE **stream, FILE *saved)
 		goto close_capture;
 	}
 
-	while ((length = fread(buffer, 1, sizeof(buffer), capture)) != 0) {
-		diff_pretty_emit_patch(buffer, length);
+	for (;;) {
+		if (pending_len)
+			memcpy(buffer, pending, pending_len);
+		length = fread(buffer + pending_len, 1,
+			       sizeof(buffer) - pending_len, capture);
+		if (!length)
+			break;
+		length += pending_len;
+		pending_len = 0;
+		suffix_len = incomplete_utf8_suffix(buffer, length);
+		if (suffix_len) {
+			memcpy(pending, buffer + length - suffix_len, suffix_len);
+			pending_len = suffix_len;
+			length -= suffix_len;
+		}
+		if (length)
+			diff_pretty_emit_patch(buffer, length);
 		if (native_failed) {
 			status = -1;
 			break;
@@ -148,6 +192,10 @@ int diff_pretty_capture_end(FILE **stream, FILE *saved)
 		remember_native_error("unable to read Git metadata buffer");
 		status = -1;
 	}
+	if (!status && pending_len)
+		diff_pretty_emit_patch(pending, pending_len);
+	if (native_failed)
+		status = -1;
 
 close_capture:
 	if (fclose(capture)) {
