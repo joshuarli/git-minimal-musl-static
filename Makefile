@@ -22,12 +22,14 @@ else
 DIFF_PRETTY_MAC_TARGET ?= aarch64-apple-darwin
 endif
 DIFF_PRETTY_FFI_ROOT ?= $(CURDIR)/.cache/diff-pretty/ffi
+DIFF_PRETTY_LOCAL_ROOT ?= $(CURDIR)/../diff-pretty
+CARGO ?= cargo
 
 MACOS_DIST ?= dist/macos
 MACOS_CFLAGS ?= -O3 -flto -DNDEBUG -pipe -ffunction-sections -fdata-sections
 MACOS_LDFLAGS ?= -flto -Wl,-dead_strip
 
-.PHONY: git macos
+.PHONY: git macos macos-local
 
 git:
 	@set -eu; \
@@ -123,3 +125,21 @@ macos:
 		GIT_EXPECTED_EXEC_PATH="$$expected_exec_path" \
 			sh test/runtime.sh; \
 		echo "Wrote $(MACOS_DIST)/git and $(MACOS_DIST)/git-*"
+
+macos-local:
+	@set -eu; \
+		ffi_repo="$(abspath $(DIFF_PRETTY_LOCAL_ROOT))"; \
+		target="$(DIFF_PRETTY_MAC_TARGET)"; \
+		test -f "$$ffi_repo/Cargo.toml" || { echo "missing local diff-pretty checkout: $$ffi_repo" >&2; exit 1; }; \
+		"$(CARGO)" build --manifest-path "$$ffi_repo/Cargo.toml" --release --package diff-pretty-ffi --target "$$target" --locked; \
+		ffi_lib="$$ffi_repo/target/$$target/release/libdiff_pretty_ffi.a"; \
+		ffi_include="$$ffi_repo/ffi/include"; \
+		test -s "$$ffi_lib" || { echo "missing local diff-pretty FFI library: $$ffi_lib" >&2; exit 1; }; \
+		test -s "$$ffi_include/diff_pretty.h" || { echo "missing local diff-pretty FFI header: $$ffi_include/diff_pretty.h" >&2; exit 1; }; \
+		staging_root="$$(mktemp -d "$${TMPDIR:-/tmp}/diff-pretty-ffi-local.XXXXXX")"; \
+		trap 'rm -rf "$$staging_root"' EXIT HUP INT TERM; \
+		mkdir -p "$$staging_root/$$target/lib"; \
+		ln -s "$$ffi_include" "$$staging_root/$$target/include"; \
+		ln -s "$$ffi_lib" "$$staging_root/$$target/lib/libdiff_pretty_ffi.a"; \
+		printf 'format=diff-pretty-ffi-v1\ntarget=%s\n' "$$target" > "$$staging_root/$$target/manifest"; \
+		$(MAKE) macos DIFF_PRETTY_MAC_TARGET="$$target" DIFF_PRETTY_FFI_ROOT="$$staging_root"

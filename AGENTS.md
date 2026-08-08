@@ -18,11 +18,15 @@ bundle, or runtime image.
 ```sh
 make git
 make macos
+make macos-local
 ```
 
-Both targets automatically download and verify the matching static FFI package
-from the newest `diff-pretty` GitHub prerelease; they do not require Rust or
-Cargo.
+`make git` and `make macos` automatically download and verify the matching
+static FFI package from the newest `diff-pretty` GitHub prerelease; they do not
+require Rust or Cargo.
+`make macos-local` is the local-development exception: it builds the release
+FFI package from `../diff-pretty` with Cargo and uses that library for the
+native macOS build. Set `DIFF_PRETTY_LOCAL_ROOT` to use a different checkout.
 The package is cached under `.cache/diff-pretty/ffi/`. `make git` selects
 `aarch64-unknown-linux-musl` on arm64 hosts and `x86_64-unknown-linux-musl` on
 x86_64 hosts, and selects the corresponding Docker platform. The macOS target
