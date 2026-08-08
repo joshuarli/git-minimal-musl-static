@@ -108,7 +108,14 @@ int diff_pretty_setup_log(struct repository *repository)
 
 int diff_pretty_active(void)
 {
-	return native_session && !native_failed && !native_quit;
+	/* Keep the native route selected after q so Git does not fall back to
+	 * writing the rest of the diff directly to the terminal. */
+	return native_session && !native_failed;
+}
+
+int diff_pretty_quit(void)
+{
+	return native_session && native_quit;
 }
 
 void diff_pretty_emit_event(unsigned kind, unsigned flags,
@@ -116,7 +123,7 @@ void diff_pretty_emit_event(unsigned kind, unsigned flags,
 {
 	int status;
 
-	if (!diff_pretty_active())
+	if (!native_session || native_failed || native_quit)
 		return;
 	status = diff_pretty_push_event(native_session, kind, flags,
 					(const unsigned char *)data, len);
@@ -130,7 +137,7 @@ void diff_pretty_emit_patch(const char *data, size_t len)
 {
 	int status;
 
-	if (!diff_pretty_active())
+	if (!native_session || native_failed || native_quit)
 		return;
 	status = diff_pretty_push_patch(native_session,
 					(const unsigned char *)data, len);
@@ -171,10 +178,13 @@ static void *diff_pretty_capture_reader(void *data)
 			pending_len = suffix_len;
 			length -= suffix_len;
 		}
-		if (length)
+		if (length) {
 			diff_pretty_emit_patch(buffer, length);
+			if (native_failed || native_quit)
+				break;
+		}
 	}
-	if (pending_len)
+	if (pending_len && !native_failed && !native_quit)
 		diff_pretty_emit_patch(pending, pending_len);
 	if (native_failed)
 		capture->reader_status = -1;
@@ -188,7 +198,7 @@ int diff_pretty_capture_begin(FILE **stream, FILE **saved)
 	FILE *capture;
 	int pipe_fds[2];
 
-	if (!diff_pretty_active())
+	if (!native_session || native_failed || native_quit)
 		return 0;
 	if (!stream || !saved || !*stream) {
 		remember_native_error("unable to capture Git metadata");

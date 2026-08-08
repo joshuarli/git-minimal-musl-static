@@ -473,6 +473,10 @@ static int cmd_log_walk_no_free(struct rev_info *rev, int start_native_pager)
 			commit_list_free(commit->parents);
 			commit->parents = NULL;
 		}
+#ifdef DIFF_PRETTY_ENABLED
+		if (diff_pretty_quit())
+			break;
+#endif
 		if (saved_nrl < rev->diffopt.needed_rename_limit)
 			saved_nrl = rev->diffopt.needed_rename_limit;
 		if (rev->diffopt.degraded_cc_to_c)

@@ -141,6 +141,32 @@ if command -v script >/dev/null 2>&1; then
         echo "empty native log entered diff-pretty" >&2
         exit 1
     fi
+
+    for i in $(seq 1 32); do
+        printf '%s\n' "$i" > quit.txt
+        git add quit.txt
+        GIT_AUTHOR_NAME=Joshua \
+        GIT_AUTHOR_EMAIL=joshua@example.com \
+        GIT_COMMITTER_NAME=Joshua \
+        GIT_COMMITTER_EMAIL=joshua@example.com \
+            git commit -qm "quit-$i"
+    done
+    native_quit_log="$test_home/native-quit-log"
+    (sleep 1; printf 'q') |
+        case "$(uname -s)" in
+            Darwin)
+                script -q "$native_quit_log" sh -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log" \
+                >/dev/null
+                ;;
+            Linux)
+                script -q -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log" \
+                "$native_quit_log" >/dev/null
+                ;;
+        esac
+    quit_commit_count=$(grep -a -c 'commit ' "$native_quit_log" || true)
+    test "$quit_commit_count" -lt 32
 fi
 
 # Put a UTF-8 lead byte at the end of the adapter's first capture chunk. The

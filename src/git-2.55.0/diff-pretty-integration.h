@@ -11,6 +11,7 @@ struct repository;
 int diff_pretty_setup(struct repository *repository);
 int diff_pretty_setup_log(struct repository *repository);
 int diff_pretty_active(void);
+int diff_pretty_quit(void);
 void diff_pretty_emit_event(unsigned kind, unsigned flags,
 			    const char *data, size_t len);
 void diff_pretty_emit_patch(const char *data, size_t len);
