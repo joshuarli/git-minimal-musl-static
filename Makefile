@@ -3,36 +3,13 @@ DOCKER_BUILD_CACHE_ARGS ?=
 DOCKER_PLATFORM ?= linux/arm64
 
 GIT_VERSION ?= 2.55.0
-GIT_SOURCE_URL ?= https://www.kernel.org/pub/software/scm/git/git-$(GIT_VERSION).tar.xz
-GIT_SOURCE_SHA256 ?= 457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17505357
 GIT_SOURCE_DIR ?= src/git-$(GIT_VERSION)
-GIT_SOURCE_ARCHIVE ?= src/git-$(GIT_VERSION).tar.xz
-GIT_SOURCE_STAMP ?= $(GIT_SOURCE_DIR)/.source-ready
 
 MACOS_DIST ?= dist/macos
 MACOS_CFLAGS ?= -O3 -flto -DNDEBUG -pipe -ffunction-sections -fdata-sections
 MACOS_LDFLAGS ?= -flto -Wl,-dead_strip
 
-.PHONY: git macos source
-
-source: $(GIT_SOURCE_STAMP)
-
-$(GIT_SOURCE_ARCHIVE):
-	@set -eu; \
-		mkdir -p "$(dir $@)"; \
-		command -v curl >/dev/null; \
-		curl --fail --location --retry 3 --output "$@.tmp" "$(GIT_SOURCE_URL)"; \
-		mv "$@.tmp" "$@"
-
-$(GIT_SOURCE_STAMP): $(GIT_SOURCE_ARCHIVE)
-	@set -eu; \
-		command -v shasum >/dev/null; \
-		printf '%s  %s\n' "$(GIT_SOURCE_SHA256)" "$(GIT_SOURCE_ARCHIVE)" | shasum -a 256 -c -; \
-		mkdir -p "$(dir $(GIT_SOURCE_DIR))"; \
-		rm -rf "$(GIT_SOURCE_DIR)"; \
-		tar -xJf "$(GIT_SOURCE_ARCHIVE)" -C "$(dir $(GIT_SOURCE_DIR))"; \
-		test -f "$(GIT_SOURCE_DIR)/Makefile"; \
-		touch "$@"
+.PHONY: git macos
 
 git:
 	@set -eu; \
@@ -53,16 +30,19 @@ git:
 		test ! -e dist/git-filter-repo; \
 		echo "Wrote dist/git and dist/git-*"
 
-macos: $(GIT_SOURCE_STAMP)
+macos:
 	@set -eu; \
 		test "$$(uname -s)" = Darwin; \
+		test -f "$(GIT_SOURCE_DIR)/Makefile" || { \
+			echo "run ./scripts/download-git-source.sh first" >&2; \
+			exit 1; \
+		}; \
 		sdkroot="$$(xcrun --sdk macosx --show-sdk-path)"; \
 		cc="$$(xcrun --sdk macosx --find clang)"; \
 		ar="$$(xcrun --sdk macosx --find ar)"; \
 		ranlib="$$(xcrun --sdk macosx --find ranlib)"; \
 		strip="$$(xcrun --sdk macosx --find strip)"; \
 		jobs="$$(sysctl -n hw.ncpu)"; \
-		$(MAKE) -C "$(GIT_SOURCE_DIR)" clean; \
 		$(MAKE) -C "$(GIT_SOURCE_DIR)" -j"$$jobs" \
 			CC="$$cc" \
 			AR="$$ar" \
@@ -103,7 +83,7 @@ macos: $(GIT_SOURCE_STAMP)
 			ln -s git "$(MACOS_DIST)/$$helper"; \
 		done; \
 			test -x "$(MACOS_DIST)/git"; \
-		test -x "$(MACOS_DIST)/git-shell"; \
+			test -x "$(MACOS_DIST)/git-shell"; \
 		expected_exec_path="$$("$(MACOS_DIST)/git" --exec-path)"; \
 		GIT_BIN_DIR="$(MACOS_DIST)" \
 		GIT_EXPECTED_EXEC_PATH="$$expected_exec_path" \

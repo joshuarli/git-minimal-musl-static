@@ -1,2 +1,37 @@
 /dist/
-/src/
+
+# Keep the downloaded release archive out of the repository. The source tree
+# itself is the checked-in development input.
+/src/*.tar.xz
+
+# Git's in-tree build products. Keep generated dependency files ignored even
+# when make places them below a per-directory .depend directory.
+/src/git-*/*.a
+/src/git-*/**/*.a
+/src/git-*/*.o
+/src/git-*/**/*.o
+/src/git-*/*.sp
+/src/git-*/**/*.sp
+/src/git-*/**/*.d
+/src/git-*/**/.depend/
+/src/git-*/.build/
+/src/git-*/bin-wrappers/
+/src/git-*/git
+/src/git-*/git-receive-pack
+/src/git-*/git-shell
+/src/git-*/git-upload-archive
+/src/git-*/git-upload-pack
+/src/git-*/GIT-CFLAGS
+/src/git-*/GIT-BUILD-OPTIONS
+/src/git-*/GIT-EXCLUDED-PROGRAMS
+/src/git-*/GIT-LDFLAGS
+/src/git-*/GIT-PERL-DEFINES
+/src/git-*/GIT-PERL-HEADER
+/src/git-*/GIT-PREFIX
+/src/git-*/GIT-PYTHON-VARS
+/src/git-*/GIT-SCRIPT-DEFINES
+/src/git-*/GIT-SPATCH-DEFINES
+/src/git-*/GIT-TEST-SUITES
+/src/git-*/GIT-USER-AGENT
+/src/git-*/GIT-VERSION-FILE
+/src/git-*/version-def.h

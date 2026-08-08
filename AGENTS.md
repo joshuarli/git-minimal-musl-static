@@ -22,9 +22,11 @@ symlinks. `make macos` writes the corresponding files under `dist/macos/`.
 The three built-in server helpers are relative symlinks to `git`; `git-shell`
 is a separate executable. Install the files together in one `bin` directory.
 
-`make macos` downloads and verifies the same pinned Git source archive into
-the ignored `src/` directory, then builds without Docker, Homebrew, or a
-separate compiler toolchain.
+Run `./scripts/download-git-source.sh` to download, verify, and trim the same
+pinned Git source archive into the checked-in `src/` subtree. The script keeps
+the generated command and hook metadata needed after Documentation is removed.
+After that, `make macos` builds without Docker, Homebrew, or a separate
+compiler toolchain.
 
 The Dockerfile runs `test/runtime.sh` in a clean Alpine stage before exporting
 the artifacts. The harness checks static linking, runtime-prefix relocation,
