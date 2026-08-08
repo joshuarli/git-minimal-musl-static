@@ -47,6 +47,10 @@
 #include "strmap.h"
 #include "ws.h"
 
+#ifdef DIFF_PRETTY_ENABLED
+#include "diff-pretty-integration.h"
+#endif
+
 #ifdef NO_FAST_WORKING_DIRECTORY
 #define FAST_WORKING_DIRECTORY 0
 #else
@@ -849,6 +853,52 @@ enum diff_symbol {
 	DIFF_SYMBOL_SEPARATOR
 };
 
+#ifdef DIFF_PRETTY_ENABLED
+#define ASSERT_DIFF_PRETTY_EVENT(name) \
+	_Static_assert((unsigned)DIFF_SYMBOL_##name == \
+		       (unsigned)DIFF_PRETTY_EVENT_##name, \
+		       "Git diff-symbol ABI changed");
+ASSERT_DIFF_PRETTY_EVENT(BINARY_DIFF_HEADER)
+ASSERT_DIFF_PRETTY_EVENT(BINARY_DIFF_HEADER_DELTA)
+ASSERT_DIFF_PRETTY_EVENT(BINARY_DIFF_HEADER_LITERAL)
+ASSERT_DIFF_PRETTY_EVENT(BINARY_DIFF_BODY)
+ASSERT_DIFF_PRETTY_EVENT(BINARY_DIFF_FOOTER)
+ASSERT_DIFF_PRETTY_EVENT(STATS_SUMMARY_NO_FILES)
+ASSERT_DIFF_PRETTY_EVENT(STATS_SUMMARY_ABBREV)
+ASSERT_DIFF_PRETTY_EVENT(STATS_SUMMARY_INSERTS_DELETES)
+ASSERT_DIFF_PRETTY_EVENT(STATS_LINE)
+ASSERT_DIFF_PRETTY_EVENT(WORD_DIFF)
+ASSERT_DIFF_PRETTY_EVENT(STAT_SEP)
+ASSERT_DIFF_PRETTY_EVENT(SUMMARY)
+ASSERT_DIFF_PRETTY_EVENT(SUBMODULE_ADD)
+ASSERT_DIFF_PRETTY_EVENT(SUBMODULE_DEL)
+ASSERT_DIFF_PRETTY_EVENT(SUBMODULE_UNTRACKED)
+ASSERT_DIFF_PRETTY_EVENT(SUBMODULE_MODIFIED)
+ASSERT_DIFF_PRETTY_EVENT(SUBMODULE_HEADER)
+ASSERT_DIFF_PRETTY_EVENT(SUBMODULE_ERROR)
+ASSERT_DIFF_PRETTY_EVENT(SUBMODULE_PIPETHROUGH)
+ASSERT_DIFF_PRETTY_EVENT(REWRITE_DIFF)
+ASSERT_DIFF_PRETTY_EVENT(BINARY_FILES)
+ASSERT_DIFF_PRETTY_EVENT(HEADER)
+ASSERT_DIFF_PRETTY_EVENT(FILEPAIR_PLUS)
+ASSERT_DIFF_PRETTY_EVENT(FILEPAIR_MINUS)
+ASSERT_DIFF_PRETTY_EVENT(WORDS_PORCELAIN)
+ASSERT_DIFF_PRETTY_EVENT(WORDS)
+ASSERT_DIFF_PRETTY_EVENT(CONTEXT)
+ASSERT_DIFF_PRETTY_EVENT(CONTEXT_INCOMPLETE)
+ASSERT_DIFF_PRETTY_EVENT(PLUS)
+ASSERT_DIFF_PRETTY_EVENT(MINUS)
+ASSERT_DIFF_PRETTY_EVENT(CONTEXT_FRAGINFO)
+ASSERT_DIFF_PRETTY_EVENT(CONTEXT_MARKER)
+ASSERT_DIFF_PRETTY_EVENT(SEPARATOR)
+#undef ASSERT_DIFF_PRETTY_EVENT
+
+static unsigned diff_pretty_event_kind(enum diff_symbol symbol)
+{
+	return (unsigned)symbol;
+}
+#endif
+
 /*
  * Flags for content lines:
  * 0..15 are whitespace rules (see ws.h)
@@ -1407,6 +1457,21 @@ static void emit_diff_symbol_from_struct(struct diff_options *o,
 
 	if (!o->file)
 		return;
+
+#ifdef DIFF_PRETTY_ENABLED
+	if (diff_pretty_active()) {
+		const char *event_line = line;
+		size_t event_len = len;
+
+		if (s == DIFF_SYMBOL_STAT_SEP) {
+			event_line = o->stat_sep ? o->stat_sep : "";
+			event_len = strlen(event_line);
+		}
+		diff_pretty_emit_event(diff_pretty_event_kind(s), flags,
+				       event_line, event_len);
+		return;
+	}
+#endif
 
 	switch (s) {
 	case DIFF_SYMBOL_SUBMODULE_HEADER:
@@ -7287,6 +7352,11 @@ free_queue:
 		else
 			options->flags.has_changes = 0;
 	}
+
+#ifdef DIFF_PRETTY_ENABLED
+	if (diff_pretty_active() && diff_pretty_end() < 0)
+		die(_("builtin:diff-pretty pager failed"));
+#endif
 }
 
 static int match_filter(const struct diff_options *options, const struct diff_filepair *p)
@@ -7875,6 +7945,14 @@ void setup_diff_pager(struct diff_options *opt)
 	 * --exit-code" in hooks and other scripts, we do not do so.
 	 */
 	if (!opt->flags.exit_with_status &&
-	    check_pager_config(the_repository, "diff") != 0)
+	    check_pager_config(the_repository, "diff") != 0) {
+#ifdef DIFF_PRETTY_ENABLED
+		int native = diff_pretty_setup(the_repository);
+		if (native < 0)
+			die(_("unable to initialize builtin:diff-pretty"));
+		if (native > 0)
+			return;
+#endif
 		setup_pager(the_repository);
+	}
 }

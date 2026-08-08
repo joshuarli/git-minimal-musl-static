@@ -4,6 +4,10 @@ DOCKER_PLATFORM ?= linux/arm64
 
 GIT_VERSION ?= 2.55.0
 GIT_SOURCE_DIR ?= src/git-$(GIT_VERSION)
+DIFF_PRETTY_DIR ?= ../diff-pretty
+DIFF_PRETTY_LINUX_TARGET ?= aarch64-unknown-linux-musl
+DIFF_PRETTY_MAC_TARGET ?= $(shell rustc -vV | awk '/^host:/ {print $$2}')
+DIFF_PRETTY_FFI_INCLUDE ?= $(DIFF_PRETTY_DIR)/ffi/include
 
 MACOS_DIST ?= dist/macos
 MACOS_CFLAGS ?= -O3 -flto -DNDEBUG -pipe -ffunction-sections -fdata-sections
@@ -13,9 +17,13 @@ MACOS_LDFLAGS ?= -flto -Wl,-dead_strip
 
 git:
 	@set -eu; \
+		$(MAKE) -C "$(DIFF_PRETTY_DIR)" ffi-release \
+			TARGET="$(DIFF_PRETTY_LINUX_TARGET)"; \
 		mkdir -p dist; \
 		rm -f dist/git dist/git-shell dist/git-upload-archive dist/git-upload-pack dist/git-receive-pack; \
 		$(DOCKER_BUILD) $(DOCKER_BUILD_CACHE_ARGS) \
+			--build-context diff-pretty="$(abspath $(DIFF_PRETTY_DIR))" \
+			--build-context diff-pretty-lib="$(abspath $(DIFF_PRETTY_DIR)/target/$(DIFF_PRETTY_LINUX_TARGET)/release)" \
 			--platform=$(DOCKER_PLATFORM) \
 			--progress=plain \
 			--target=artifacts \
@@ -32,6 +40,8 @@ git:
 
 macos:
 	@set -eu; \
+		$(MAKE) -C "$(DIFF_PRETTY_DIR)" ffi-release \
+			TARGET="$(DIFF_PRETTY_MAC_TARGET)"; \
 		test "$$(uname -s)" = Darwin; \
 		test -f "$(GIT_SOURCE_DIR)/Makefile" || { \
 			echo "run ./scripts/download-git-source.sh first" >&2; \
@@ -48,7 +58,7 @@ macos:
 			AR="$$ar" \
 			RANLIB="$$ranlib" \
 			STRIP="$$strip" \
-			CPPFLAGS="-isysroot $$sdkroot" \
+			CPPFLAGS="-isysroot $$sdkroot -DDIFF_PRETTY_ENABLED -I$(abspath $(DIFF_PRETTY_FFI_INCLUDE))" \
 			CFLAGS="$(MACOS_CFLAGS)" \
 			LDFLAGS="$(MACOS_LDFLAGS) -isysroot $$sdkroot" \
 			NO_CURL=YesPlease \
@@ -62,6 +72,8 @@ macos:
 			NO_PYTHON=YesPlease \
 			NO_REGEX=NeedsStartEnd \
 			NO_RUST=YesPlease \
+			DIFF_PRETTY_FFI_LIB="$(abspath $(DIFF_PRETTY_DIR)/target/$(DIFF_PRETTY_MAC_TARGET)/release/libdiff_pretty_ffi.a)" \
+			DIFF_PRETTY_FFI_INCLUDE="$(abspath $(DIFF_PRETTY_FFI_INCLUDE))" \
 			NO_TCLTK=YesPlease \
 			RUNTIME_PREFIX=YesPlease \
 			prefix=/usr \

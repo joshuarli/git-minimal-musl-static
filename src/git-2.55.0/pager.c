@@ -150,6 +150,14 @@ void setup_pager(struct repository *r)
 	if (!pager)
 		return;
 
+#ifdef DIFF_PRETTY_ENABLED
+	/* The builtin selector is consumed by setup_diff_pager(); unsupported
+	 * commands should leave their output direct rather than execute it as a
+	 * shell command. */
+	if (!strcmp(pager, "builtin:diff-pretty"))
+		return;
+#endif
+
 	/*
 	 * After we redirect standard output, we won't be able to use an ioctl
 	 * to get the terminal size. Let's grab it now, and then set $COLUMNS

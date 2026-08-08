@@ -3,3 +3,13 @@
 !Dockerfile
 !test/
 !test/runtime.sh
+!src/
+!src/git-2.55.0/
+!src/git-2.55.0/Makefile
+!src/git-2.55.0/command-list.h
+!src/git-2.55.0/config-list.h
+!src/git-2.55.0/hook-list.h
+!src/git-2.55.0/diff.c
+!src/git-2.55.0/pager.c
+!src/git-2.55.0/diff-pretty.c
+!src/git-2.55.0/diff-pretty-integration.h

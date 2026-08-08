@@ -1141,6 +1141,11 @@ LIB_OBJS += diff-merges.o
 LIB_OBJS += diff-lib.o
 LIB_OBJS += diff-no-index.o
 LIB_OBJS += diff.o
+ifdef DIFF_PRETTY_FFI_LIB
+LIB_OBJS += diff-pretty.o
+CPPFLAGS += -DDIFF_PRETTY_ENABLED -I$(DIFF_PRETTY_FFI_INCLUDE)
+GITLIBS += $(DIFF_PRETTY_FFI_LIB)
+endif
 LIB_OBJS += diffcore-break.o
 LIB_OBJS += diffcore-delta.o
 LIB_OBJS += diffcore-order.o

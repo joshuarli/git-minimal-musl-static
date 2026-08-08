@@ -38,6 +38,20 @@ ADD --checksum=sha256:457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17
     --unpack=true \
     https://www.kernel.org/pub/software/scm/git/git-2.55.0.tar.xz /src/
 
+# The Git source remains fetched from the pinned release archive. Only the
+# small native adapter and the small integration edits come from this repository;
+# the Rust artifact and ABI header arrive through BuildKit named contexts.
+COPY src/git-2.55.0/Makefile /src/git-2.55.0/Makefile
+COPY src/git-2.55.0/command-list.h /src/git-2.55.0/command-list.h
+COPY src/git-2.55.0/config-list.h /src/git-2.55.0/config-list.h
+COPY src/git-2.55.0/hook-list.h /src/git-2.55.0/hook-list.h
+COPY src/git-2.55.0/diff.c /src/git-2.55.0/diff.c
+COPY src/git-2.55.0/pager.c /src/git-2.55.0/pager.c
+COPY src/git-2.55.0/diff-pretty.c /src/git-2.55.0/diff-pretty.c
+COPY src/git-2.55.0/diff-pretty-integration.h /src/git-2.55.0/diff-pretty-integration.h
+COPY --from=diff-pretty ffi/include/diff_pretty.h /src/diff-pretty/include/diff_pretty.h
+COPY --from=diff-pretty-lib libdiff_pretty_ffi.a /src/diff-pretty/libdiff_pretty_ffi.a
+
 WORKDIR /src/git-2.55.0
 
 # musl does not expose REG_STARTEND; use Git's compatibility regex.
@@ -50,6 +64,8 @@ RUN set -eux; \
         STRIP="$STRIP" \
         CFLAGS="-O3 -flto -DNDEBUG -pipe -ffunction-sections -fdata-sections" \
         LDFLAGS="-static -flto -fuse-ld=lld -Wl,--gc-sections" \
+        DIFF_PRETTY_FFI_LIB=/src/diff-pretty/libdiff_pretty_ffi.a \
+        DIFF_PRETTY_FFI_INCLUDE=/src/diff-pretty/include \
         NO_CURL=YesPlease \
         NO_EXPAT=YesPlease \
         NO_GETTEXT=YesPlease \

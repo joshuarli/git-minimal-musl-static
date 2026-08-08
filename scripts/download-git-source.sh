@@ -10,6 +10,7 @@ repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
 source_parent="$repo_root/src"
 source_dir="$source_parent/git-$version"
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-minimal-source.XXXXXX")
+integration_dir="$work_dir/diff-pretty-integration"
 
 trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
 
@@ -111,6 +112,17 @@ done
 
 rm -rf "$staged_dir/.depend"
 
+# Keep the checked-in native diff-pretty overlay while replacing the generated
+# Git source tree below. The overlay is deliberately limited to the small Git
+# integration edits and adapter; all other source files still come from
+# the verified release archive.
+if test -f "$source_dir/diff-pretty.c"; then
+    mkdir -p "$integration_dir"
+    for file in Makefile diff.c pager.c diff-pretty.c diff-pretty-integration.h; do
+        cp "$source_dir/$file" "$integration_dir/$file"
+    done
+fi
+
 rm -f \
     "$staged_dir/Cargo.toml" \
     "$staged_dir/build.rs" \
@@ -137,5 +149,9 @@ done
 rm -rf "$source_dir"
 mkdir -p "$source_parent"
 mv "$staged_dir" "$source_dir"
+
+if test -d "$integration_dir"; then
+    cp "$integration_dir"/* "$source_dir/"
+fi
 
 printf 'Wrote trimmed Git %s source to %s\n' "$version" "$source_dir"
