@@ -1,0 +1,102 @@
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: release-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  GIT_TERMINAL_PROMPT: 0
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-aarch64
+            runner: macos-26
+            kind: macos
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            kind: linux
+            target: aarch64-unknown-linux-musl
+            docker_platform: linux/arm64
+          - name: linux-amd64
+            runner: ubuntu-latest
+            kind: linux
+            target: x86_64-unknown-linux-musl
+            docker_platform: linux/amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        if: matrix.kind == 'linux'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build macOS distribution
+        if: matrix.kind == 'macos'
+        run: |
+          make macos
+          tar -czf "git-minimal-${{ matrix.name }}.tar.gz" \
+            -C dist/macos \
+            git git-shell git-upload-archive git-upload-pack git-receive-pack
+
+      - name: Build Linux distribution
+        if: matrix.kind == 'linux'
+        run: |
+          make git \
+            DIFF_PRETTY_LINUX_TARGET=${{ matrix.target }} \
+            DOCKER_PLATFORM=${{ matrix.docker_platform }}
+          tar -czf "git-minimal-${{ matrix.name }}.tar.gz" \
+            -C dist \
+            git git-shell git-upload-archive git-upload-pack git-receive-pack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: git-minimal-${{ matrix.name }}
+          path: git-minimal-${{ matrix.name }}.tar.gz
+
+  release:
+    name: Create pre-release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: git-minimal-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksum distributions
+        run: |
+          for archive in dist/git-minimal-*.tar.gz; do
+            name="${archive##*/}"
+            hash="$(sha256sum "$archive" | awk '{print $1}')"
+            printf '%s  %s\n' "$hash" "$name" > "dist/$name.sha256"
+          done
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: release-${{ github.sha }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/git-minimal-* \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TAG"

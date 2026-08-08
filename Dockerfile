@@ -26,7 +26,10 @@ ENV PATH=/usr/lib/llvm22/bin:$PATH \
     LD=ld.lld \
     STRIP=llvm22-strip
 
-RUN test "$(apk --print-arch)" = aarch64 \
+RUN case "$(apk --print-arch)" in \
+        aarch64|x86_64) ;; \
+        *) echo "unsupported Alpine architecture: $(apk --print-arch)" >&2; exit 1 ;; \
+    esac \
     && clang --version | grep -q "${LLVM_VERSION}" \
     && ld.lld --version | grep -q "${LLVM_VERSION}"
 
@@ -40,7 +43,8 @@ ADD --checksum=sha256:457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17
 
 # The Git source remains fetched from the pinned release archive. Only the
 # small native adapter and the small integration edits come from this repository;
-# the Rust artifact and ABI header arrive through BuildKit named contexts.
+# the prebuilt static Rust artifact and ABI header arrive through BuildKit named
+# contexts. The build stage does not need Rust or Cargo.
 COPY src/git-2.55.0/Makefile /src/git-2.55.0/Makefile
 COPY src/git-2.55.0/command-list.h /src/git-2.55.0/command-list.h
 COPY src/git-2.55.0/config-list.h /src/git-2.55.0/config-list.h
@@ -51,7 +55,7 @@ COPY src/git-2.55.0/builtin/log.c /src/git-2.55.0/builtin/log.c
 COPY src/git-2.55.0/log-tree.c /src/git-2.55.0/log-tree.c
 COPY src/git-2.55.0/diff-pretty.c /src/git-2.55.0/diff-pretty.c
 COPY src/git-2.55.0/diff-pretty-integration.h /src/git-2.55.0/diff-pretty-integration.h
-COPY --from=diff-pretty ffi/include/diff_pretty.h /src/diff-pretty/include/diff_pretty.h
+COPY --from=diff-pretty include/diff_pretty.h /src/diff-pretty/include/diff_pretty.h
 COPY --from=diff-pretty-lib libdiff_pretty_ffi.a /src/diff-pretty/libdiff_pretty_ffi.a
 
 WORKDIR /src/git-2.55.0

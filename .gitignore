@@ -1,4 +1,5 @@
 /dist/
+/.cache/
 
 # Keep the downloaded release archive out of the repository. The source tree
 # itself is the checked-in development input.
