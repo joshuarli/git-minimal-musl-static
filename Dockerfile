@@ -47,6 +47,8 @@ COPY src/git-2.55.0/config-list.h /src/git-2.55.0/config-list.h
 COPY src/git-2.55.0/hook-list.h /src/git-2.55.0/hook-list.h
 COPY src/git-2.55.0/diff.c /src/git-2.55.0/diff.c
 COPY src/git-2.55.0/pager.c /src/git-2.55.0/pager.c
+COPY src/git-2.55.0/builtin/log.c /src/git-2.55.0/builtin/log.c
+COPY src/git-2.55.0/log-tree.c /src/git-2.55.0/log-tree.c
 COPY src/git-2.55.0/diff-pretty.c /src/git-2.55.0/diff-pretty.c
 COPY src/git-2.55.0/diff-pretty-integration.h /src/git-2.55.0/diff-pretty-integration.h
 COPY --from=diff-pretty ffi/include/diff_pretty.h /src/diff-pretty/include/diff_pretty.h

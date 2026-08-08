@@ -20,8 +20,10 @@ make macos
 ```
 
 The native pager is opt-in: set `GIT_PAGER=builtin:diff-pretty` or
-`core.pager=builtin:diff-pretty` for an interactive `git diff`. Redirected
-output stays on Git's ordinary byte path. `DIFF_PRETTY_DIR` defaults to
+`core.pager=builtin:diff-pretty` for an interactive `git diff`, `git log`,
+or `git show <commit>`. Redirected output stays on Git's ordinary byte path.
+Log and show keep commit metadata in the same ordered stream as Git's semantic
+file and hunk events. `DIFF_PRETTY_DIR` defaults to
 `../diff-pretty` and can point at another checkout.
 
 `make git` writes `dist/git` plus `git-shell` and the three server helper

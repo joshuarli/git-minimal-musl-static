@@ -34,6 +34,10 @@
 #include "write-or-die.h"
 #include "pager.h"
 
+#ifdef DIFF_PRETTY_ENABLED
+#include "diff-pretty-integration.h"
+#endif
+
 static struct decoration name_decoration = { "object names" };
 static int decoration_loaded;
 static int decoration_flags;
@@ -937,6 +941,13 @@ int log_tree_diff_flush(struct rev_info *opt)
 	}
 
 	if (opt->loginfo && !opt->no_commit_id) {
+#ifdef DIFF_PRETTY_ENABLED
+		FILE *saved_file = NULL;
+		int native_capture = diff_pretty_capture_begin(&opt->diffopt.file,
+							      &saved_file);
+		if (native_capture < 0)
+			die(_("unable to capture Git metadata for builtin:diff-pretty"));
+#endif
 		show_log(opt);
 		if ((opt->diffopt.output_format & ~DIFF_FORMAT_NO_OUTPUT) &&
 		    opt->verbose_header &&
@@ -967,6 +978,11 @@ int log_tree_diff_flush(struct rev_info *opt)
 				fprintf(opt->diffopt.file, "---");
 			putc('\n', opt->diffopt.file);
 		}
+#ifdef DIFF_PRETTY_ENABLED
+		if (native_capture &&
+		    diff_pretty_capture_end(&opt->diffopt.file, saved_file) < 0)
+			die(_("builtin:diff-pretty metadata capture failed"));
+#endif
 	}
 	diff_flush(&opt->diffopt);
 	return 1;
@@ -1190,7 +1206,21 @@ int log_tree_commit(struct rev_info *opt, struct commit *commit)
 	shown = log_tree_diff(opt, commit, &log);
 	if (!shown && opt->loginfo && opt->always_show_header) {
 		log.parent = NULL;
+#ifdef DIFF_PRETTY_ENABLED
+		{
+			FILE *saved_file = NULL;
+			int native_capture = diff_pretty_capture_begin(&opt->diffopt.file,
+								      &saved_file);
+			if (native_capture < 0)
+				die(_("unable to capture Git metadata for builtin:diff-pretty"));
+			show_log(opt);
+			if (native_capture &&
+			    diff_pretty_capture_end(&opt->diffopt.file, saved_file) < 0)
+				die(_("builtin:diff-pretty metadata capture failed"));
+		}
+#else
 		show_log(opt);
+#endif
 		shown = 1;
 	}
 	if (opt->track_linear && !opt->linear && opt->reverse_output_stage)

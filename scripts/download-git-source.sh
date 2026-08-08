@@ -118,7 +118,8 @@ rm -rf "$staged_dir/.depend"
 # the verified release archive.
 if test -f "$source_dir/diff-pretty.c"; then
     mkdir -p "$integration_dir"
-    for file in Makefile diff.c pager.c diff-pretty.c diff-pretty-integration.h; do
+    for file in Makefile diff.c pager.c builtin/log.c log-tree.c diff-pretty.c diff-pretty-integration.h; do
+        mkdir -p "$integration_dir/$(dirname "$file")"
         cp "$source_dir/$file" "$integration_dir/$file"
     done
 fi
@@ -151,7 +152,7 @@ mkdir -p "$source_parent"
 mv "$staged_dir" "$source_dir"
 
 if test -d "$integration_dir"; then
-    cp "$integration_dir"/* "$source_dir/"
+    cp -R "$integration_dir"/. "$source_dir"/
 fi
 
 printf 'Wrote trimmed Git %s source to %s\n' "$version" "$source_dir"

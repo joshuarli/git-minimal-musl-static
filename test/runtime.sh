@@ -67,6 +67,57 @@ GIT_COMMITTER_NAME=Joshua \
 GIT_COMMITTER_EMAIL=joshua@example.com \
     git commit -qm initial
 
+printf '%s\n' changed > hello.txt
+git add hello.txt
+GIT_AUTHOR_NAME=Joshua \
+GIT_AUTHOR_EMAIL=joshua@example.com \
+GIT_COMMITTER_NAME=Joshua \
+GIT_COMMITTER_EMAIL=joshua@example.com \
+    git commit -qm changed
+
+# The native pager needs a terminal, so keep this focused semantic-path check
+# optional for minimal runtime images that do not ship a PTY driver. All
+# other runtime commands continue to exercise the ordinary byte path
+# everywhere.
+if command -v script >/dev/null 2>&1; then
+    native_output="$test_home/native-show"
+    native_log_output="$test_home/native-log"
+    native_plain_log_output="$test_home/native-plain-log"
+    case "$(uname -s)" in
+        Darwin)
+            (sleep 1; printf 'q') |
+                script -q "$native_output" sh -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' show HEAD" \
+                >/dev/null
+            (sleep 1; printf 'q') |
+                script -q "$native_log_output" sh -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -p -2" \
+                >/dev/null
+            (sleep 1; printf 'q') |
+                script -q "$native_plain_log_output" sh -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -2" \
+                >/dev/null
+            ;;
+        Linux)
+            (sleep 1; printf 'q') |
+                script -q -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' show HEAD" \
+                "$native_output" >/dev/null
+            (sleep 1; printf 'q') |
+                script -q -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -p -2" \
+                "$native_log_output" >/dev/null
+            (sleep 1; printf 'q') |
+                script -q -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -2" \
+                "$native_plain_log_output" >/dev/null
+            ;;
+    esac
+    grep -a -q 'Δ ' "$native_output"
+    grep -a -q 'Δ ' "$native_log_output"
+    grep -a -q 'diff-pretty' "$native_plain_log_output"
+fi
+
 branch=$(git branch --show-current)
 test -n "$branch"
 git rev-parse --is-inside-work-tree

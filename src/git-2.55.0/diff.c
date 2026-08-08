@@ -7354,7 +7354,7 @@ free_queue:
 	}
 
 #ifdef DIFF_PRETTY_ENABLED
-	if (diff_pretty_active() && diff_pretty_end() < 0)
+	if (diff_pretty_active() && diff_pretty_end_after_diff() < 0)
 		die(_("builtin:diff-pretty pager failed"));
 #endif
 }

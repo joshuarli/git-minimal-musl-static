@@ -52,6 +52,10 @@
 #include "userdiff.h"
 #include "write-or-die.h"
 
+#ifdef DIFF_PRETTY_ENABLED
+#include "diff-pretty-integration.h"
+#endif
+
 #define MAIL_DEFAULT_WRAP 72
 #define COVER_FROM_AUTO_MAX_SUBJECT_LEN 100
 #define FORMAT_PATCH_NAME_MAX_DEFAULT 64
@@ -396,6 +400,38 @@ static void cmd_log_init(int argc, const char **argv, const char *prefix,
 	cmd_log_init_finish(argc, argv, prefix, rev, opt, cfg);
 }
 
+#ifdef DIFF_PRETTY_ENABLED
+static void setup_native_log_pager(void)
+{
+	int native;
+
+	native = diff_pretty_setup_log(the_repository);
+	if (native < 0)
+		die(_("unable to initialize builtin:diff-pretty"));
+}
+
+static void setup_native_show_pager(const struct rev_info *rev)
+{
+	unsigned int i;
+
+	if (!(rev->diffopt.output_format & DIFF_FORMAT_PATCH) ||
+	    !rev->pending.nr)
+		return;
+	for (i = 0; i < rev->pending.nr; i++)
+		if (rev->pending.objects[i].item->type != OBJ_COMMIT)
+			return;
+	setup_native_log_pager();
+}
+#endif
+
+static void finish_native_log_pager(void)
+{
+#ifdef DIFF_PRETTY_ENABLED
+	if (diff_pretty_active() && diff_pretty_end() < 0)
+		die(_("builtin:diff-pretty pager failed"));
+#endif
+}
+
 static int cmd_log_walk_no_free(struct rev_info *rev)
 {
 	struct commit *commit;
@@ -693,8 +729,13 @@ int cmd_show(int argc,
 	opt.tweak = show_setup_revisions_tweak;
 	cmd_log_init(argc, argv, prefix, &rev, &opt, &cfg);
 
+#ifdef DIFF_PRETTY_ENABLED
+	setup_native_show_pager(&rev);
+#endif
+
 	if (!rev.no_walk) {
 		ret = cmd_log_walk(&rev);
+		finish_native_log_pager();
 		release_revisions(&rev);
 		log_config_release(&cfg);
 		return ret;
@@ -768,6 +809,7 @@ int cmd_show(int argc,
 
 	rev.diffopt.no_free = 0;
 	diff_free(&rev.diffopt);
+	finish_native_log_pager();
 	release_revisions(&rev);
 	log_config_release(&cfg);
 
@@ -846,7 +888,12 @@ int cmd_log(int argc,
 	opt.tweak = log_setup_revisions_tweak;
 	cmd_log_init(argc, argv, prefix, &rev, &opt, &cfg);
 
+#ifdef DIFF_PRETTY_ENABLED
+	setup_native_log_pager();
+#endif
+
 	ret = cmd_log_walk(&rev);
+	finish_native_log_pager();
 
 	release_revisions(&rev);
 	log_config_release(&cfg);
