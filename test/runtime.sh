@@ -122,6 +122,25 @@ if command -v script >/dev/null 2>&1; then
             exit 1
         fi
     done
+
+    native_empty_log="$test_home/native-empty-log"
+    (sleep 1; printf 'q') |
+        case "$(uname -s)" in
+            Darwin)
+                script -q "$native_empty_log" sh -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -- no-such-path" \
+                >/dev/null
+                ;;
+            Linux)
+                script -q -c \
+                "stty rows 24 cols 80; exec env GIT_PAGER=builtin:diff-pretty TERM=dumb '$git' log -- no-such-path" \
+                "$native_empty_log" >/dev/null
+                ;;
+        esac
+    if grep -a -F -q "$(printf '\033[?1049h')" "$native_empty_log"; then
+        echo "empty native log entered diff-pretty" >&2
+        exit 1
+    fi
 fi
 
 # Put a UTF-8 lead byte at the end of the adapter's first capture chunk. The
